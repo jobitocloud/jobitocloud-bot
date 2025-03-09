@@ -14,6 +14,11 @@ export class FileSystemFeature {
     const sanitizedPartialName = partialName
       .replace(/\.\./g, "")
       .replace(/\.\//g, "")
+      .replace(/á/g, "a")
+      .replace(/é/g, "e")
+      .replace(/í/g, "i")
+      .replace(/ó/g, "o")
+      .replace(/ú/g, "u")
       .toLowerCase();
     const files = readdirSync(this.rootPath);
     return files.filter((file) =>

@@ -1,0 +1,3 @@
+# Ayúdame a estudiar
+
+Soy un estudiante universitario, y estoy preparando una materia de mi carrera, relacionada al documento que te adjunto. Quiero que realices, por favor, un resumen de los puntos más importantes de este libro, considerando todo aquello que sería evaluable en un examen. Explica el lenguaje específico del documento, de ser necesario, y considera que el enfoque de este estudio es académico universitario. Estudia en detalle el contenido del documento, para que pueda realizarte preguntas para profundizar luego. Responde directamente con lo que hallas aprendido y consideres importante del documento, sin agregar preámbulos ni formalismos.

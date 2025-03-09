@@ -6,6 +6,7 @@ import {
   LibraryFeature,
 } from "./features";
 import { GeminiFeature } from "./features/gemini/gemini";
+import { CommandHandlerDictionary } from "./types";
 
 export class JobitoCloudBot {
   private readonly bot: TelegramBot;
@@ -14,6 +15,8 @@ export class JobitoCloudBot {
   private readonly fileSystem: FileSystemFeature;
   private readonly gemini: GeminiFeature;
   private readonly library: LibraryFeature;
+
+  private commandHandlers = {} as CommandHandlerDictionary;
 
   constructor() {
     // Core System
@@ -36,10 +39,37 @@ export class JobitoCloudBot {
       this.gemini
     );
 
-    this.enableCommands();
+    this.enableSyntaxCommands();
+    this.enableNaturalCommands();
   }
 
-  private enableCommands() {
-    this.bot.setMyCommands([...this.library.getCommands()]);
+  private enableSyntaxCommands() {
+    const libraryCommands = this.library.getCommands();
+
+    this.bot.setMyCommands([...libraryCommands.menu]);
+
+    this.commandHandlers = { ...libraryCommands.handlers };
+
+    for (const [command, handler] of Object.entries(this.commandHandlers)) {
+      this.bot.onText(new RegExp(command), handler);
+    }
+  }
+
+  private enableNaturalCommands() {
+    this.bot.onText(/^[^\/]/, async (message) => {
+      console.log("Interpreting", message.text);
+      const commandPrompt = await this.gemini.parseNaturalCommand(
+        message.text as string
+      );
+      console.log("Parsed as", commandPrompt);
+      const promptAsMessage = JSON.parse(
+        JSON.stringify(message)
+      ) as TelegramBot.Message;
+      promptAsMessage.text = commandPrompt;
+      const [commandToExecute] = commandPrompt.split(" ");
+
+      await this.bot.sendChatAction(message.chat.id, "typing");
+      await this.commandHandlers[`^${commandToExecute}`](promptAsMessage, null);
+    });
   }
 }

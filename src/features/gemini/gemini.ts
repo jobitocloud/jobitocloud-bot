@@ -1,4 +1,5 @@
 import {
+  ChatSession,
   GenerationConfig,
   GenerativeModel,
   GoogleGenerativeAI,
@@ -9,6 +10,8 @@ import {
 } from "@google/generative-ai/server";
 import type { EnvFeature } from "../env/env";
 import { FileSystemFeature } from "../filesystem/filesystem";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 
 const GEMINI_CONFIGURATION: GenerationConfig = {
   temperature: 1,
@@ -18,41 +21,63 @@ const GEMINI_CONFIGURATION: GenerationConfig = {
   responseMimeType: "text/plain",
 };
 
-const GEMINI_STUDY_PROMPT = `Soy un estudiante universitario, y estoy preparando una materia de mi carrera, 
-relacionada al documento que te adjunto. Quiero que realices, por favor, un resumen de los puntos más importantes 
-de este libro, considerando todo aquello que sería evaluable en un examen. Explica el lenguaje específico del 
-documento, de ser necesario, y considera que el enfoque de este estudio es académico universitario. Estudia en detalle
-el contenido del documento, para que pueda realizarte preguntas para profundizar luego. Responde directamente
-con lo que hallas aprendido y consideres importante del documento, sin agregar preámbulos ni formalismos.`;
-
 export class GeminiFeature {
   private readonly ai: GoogleGenerativeAI;
   private readonly aiFileManager: GoogleAIFileManager;
   private readonly aiModel: GenerativeModel;
+  private prompts: {
+    naturalCommands: string[];
+    study: string[];
+  } = {
+    naturalCommands: [],
+    study: [],
+  };
+  private aiSession: ChatSession = {} as ChatSession;
 
   constructor(
     private readonly env: EnvFeature,
     private readonly fileSystem: FileSystemFeature
   ) {
+    this.loadPrompts();
+
     this.ai = new GoogleGenerativeAI(this.env.GEMINI_TOKEN);
     this.aiFileManager = new GoogleAIFileManager(this.env.GEMINI_TOKEN);
     this.aiModel = this.ai.getGenerativeModel({
       model: "gemini-2.0-flash-exp",
+      generationConfig: GEMINI_CONFIGURATION,
+      systemInstruction: {
+        role: "user",
+        parts: this.prompts.naturalCommands.map((line) => ({ text: line })),
+      },
     });
+
+    this.setup();
   }
 
-  private generateHistoryFromFiles(files: FileMetadataResponse[]) {
-    return [
-      {
-        role: "user",
-        parts: files.map((file) => ({
-          fileData: {
-            mimeType: file.mimeType,
-            fileUri: file.uri,
-          },
-        })),
+  private loadPrompts() {
+    this.prompts.naturalCommands = readFileSync(
+      resolve(__dirname, "prompts/natural-commands.md")
+    )
+      .toString("utf8")
+      .replace(/<FS_HOME>/g, this.env.FS_HOME)
+      .split("\n\n");
+
+    this.prompts.study = readFileSync(resolve(__dirname, "prompts/study.md"))
+      .toString("utf8")
+      .split("\n\n");
+  }
+
+  private setup() {
+    this.aiSession = this.aiModel.startChat();
+  }
+
+  private generatePartFromFiles(files: FileMetadataResponse[]) {
+    return files.map((file) => ({
+      fileData: {
+        mimeType: file.mimeType,
+        fileUri: file.uri,
       },
-    ];
+    }));
   }
 
   private async uploadToGemini(fileName: string) {
@@ -68,11 +93,15 @@ export class GeminiFeature {
 
   async summarizeDocument(fileName: string): Promise<string> {
     const attachments = [await this.uploadToGemini(fileName)];
-    const aiSession = this.aiModel.startChat({
-      generationConfig: GEMINI_CONFIGURATION,
-      history: this.generateHistoryFromFiles(attachments),
-    });
-    const { response } = await aiSession.sendMessage(GEMINI_STUDY_PROMPT);
+    const { response } = await this.aiSession.sendMessage([
+      ...this.prompts.study,
+      ...this.generatePartFromFiles(attachments),
+    ]);
+    return response.text();
+  }
+
+  async parseNaturalCommand(commandPrompt: string): Promise<string> {
+    const { response } = await this.aiSession.sendMessage(commandPrompt);
     return response.text();
   }
 }
